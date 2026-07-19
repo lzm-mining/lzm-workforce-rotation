@@ -115,6 +115,7 @@
   .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:600}
   .pill.visa{background:rgba(58,143,183,.15);color:#7cc4e0;border:1px solid rgba(58,143,183,.4)}
   .pill.novisa{background:var(--panel2);color:var(--muted);border:1px solid var(--line)}
+  .pill.dept{background:rgba(212,160,42,.15);color:var(--accent);border:1px solid rgba(212,160,42,.4)}
 
   /* calendar */
   .cal-top{display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap}
@@ -154,10 +155,12 @@
 
   /* monthly table view */
   .mtable-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius)}
-  table.mtable{font-size:11px;min-width:760px}
-  table.mtable th,table.mtable td{padding:5px 4px;text-align:center;border:1px solid var(--line)}
+  table.mtable{font-size:11px;width:100%;table-layout:fixed}
+  table.mtable th,table.mtable td{padding:5px 1px;text-align:center;border:1px solid var(--line);
+    overflow:hidden;text-overflow:ellipsis}
   table.mtable th.emp,table.mtable td.emp{text-align:left;position:sticky;left:0;background:var(--panel);
-    z-index:2;min-width:140px;font-weight:600}
+    z-index:2;width:120px;font-weight:600;padding-left:8px;white-space:normal}
+  table.mtable .emp-dept{display:inline-block;margin-top:2px;font-size:9.5px;font-weight:500;color:var(--accent)}
   table.mtable td.w{background:var(--work-bg);color:#6cc78f;font-weight:700}
   table.mtable td.o{background:var(--off-bg);color:#e09486;font-weight:700}
   table.mtable td.none{color:#3a4654}
@@ -214,7 +217,6 @@
     <input class="inp" id="li-pass" type="password" placeholder="••••••••" autocomplete="current-password">
     <div id="li-err" class="err hidden"></div>
     <button class="btn" id="li-go">Sign In</button>
-    <div class="seed" id="seed-hint"></div>
   </div>
 </div>
 
@@ -394,14 +396,17 @@ const WORK_END   = 17*60;                   // 17:00 in minutes
 const TH_MONTHS = ["January","February","March","April","May","June",
   "July","August","September","October","November","December"];
 const TH_DOW = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+/* ---- departments / sections ---- */
+const DEPTS = {mineplan:"Mine Plan", mineops:"Mine Operation"};
+function deptName(d){return DEPTS[d]||"—";}
 
 /* ---------- storage ---------- */
 function defaultData(){
   return {
     users:[ {email:"admin@lzmgold.com", pass:"lzm1234", name:"Administrator", role:"admin"} ],
     employees:[
-      {id:id(), name:"Employee 1", visa:true,  start:"2026-06-05", resets:[]},
-      {id:id(), name:"Employee 2", visa:false, start:"2026-06-08", resets:[]}
+      {id:id(), name:"Employee 1", visa:true,  start:"2026-06-05", resets:[], dept:"mineplan"},
+      {id:id(), name:"Employee 2", visa:false, start:"2026-06-08", resets:[], dept:"mineops"}
     ],
     overrides:{},      // { "<empId>:<YYYY-MM-DD>": "work"|"off" }  status override
     extraOverrides:{}, // { "<empId>:<YYYY-MM-DD>": "yes"|"no" }   force/clear "extra" flag
@@ -634,10 +639,6 @@ let SESSION=null;
 function showLogin(){
   document.getElementById("login").classList.remove("hidden");
   document.getElementById("app").classList.add("hidden");
-  const admin=DATA.users.find(u=>u.role==="admin");
-  document.getElementById("seed-hint").innerHTML =
-    "Default admin login:<br><code>"+(admin?admin.email:"admin@lzmgold.com")+
-    "</code> / <code>"+(admin?admin.pass:"lzm1234")+"</code><br>(change it in Administration)";
 }
 function doLogin(){
   const em=document.getElementById("li-email").value.trim().toLowerCase();
@@ -717,6 +718,7 @@ function renderDash(){
       : '<span style="color:var(--muted)">Not started</span>';
     return `<tr>
       <td><b>${esc(e.name)}</b></td>
+      <td>${e.dept?'<span class="pill dept">'+esc(deptName(e.dept))+'</span>':'<span class="pill novisa">—</span>'}</td>
       <td>${e.visa?'<span class="pill visa">Visa</span>':'<span class="pill novisa">No visa</span>'}</td>
       <td>${stTxt}</td>
       <td>${s.work}</td>
@@ -730,10 +732,10 @@ function renderDash(){
     </tr>`;
   }).join("");
   document.getElementById("summary-table").innerHTML=
-    `<thead><tr><th>Employee</th><th>Visa</th><th>Today</th>
+    `<thead><tr><th>Employee</th><th>Department</th><th>Visa</th><th>Today</th>
      <th>Days worked</th><th>Travel</th><th>Actual work</th><th>Days off</th><th>Extended</th><th>Leave earned</th>
      <th>Used</th><th>Balance</th></tr></thead>
-     <tbody>${rows||'<tr><td colspan=11 style="color:var(--muted)">No employees yet</td></tr>'}</tbody>`;
+     <tbody>${rows||'<tr><td colspan=12 style="color:var(--muted)">No employees yet</td></tr>'}</tbody>`;
   renderLeave();
 }
 
@@ -960,7 +962,7 @@ function renderMonth(){
       else if(eff==="off"){cells+=`<td class="o">O</td>`;o++;}
       else cells+=`<td class="none">–</td>`;
     }
-    body+=`<tr><td class="emp">${esc(e.name)}${e.visa?' <span class="pill visa">V</span>':''}</td>
+    body+=`<tr><td class="emp">${esc(e.name)}${e.visa?' <span class="pill visa">V</span>':''}${e.dept?`<br><span class="emp-dept">${esc(deptName(e.dept))}</span>`:''}</td>
       ${cells}<td><b>${w}</b></td><td><b>${o}</b></td></tr>`;
   });
   body+="</tbody>";
@@ -996,9 +998,10 @@ function renderAdmin(){
       </td></tr>`).join("")+`</tbody>`;
 
   document.getElementById("emp-table").innerHTML=
-    `<thead><tr><th>Name</th><th>Visa</th><th>Start date</th><th></th></tr></thead><tbody>`+
+    `<thead><tr><th>Name</th><th>Department</th><th>Visa</th><th>Start date</th><th></th></tr></thead><tbody>`+
     DATA.employees.map((e,i)=>`<tr>
       <td><b>${esc(e.name)}</b></td>
+      <td>${e.dept?'<span class="pill dept">'+esc(deptName(e.dept))+'</span>':'<span class="pill novisa">—</span>'}</td>
       <td>${e.visa?'<span class="pill visa">Visa</span>':'<span class="pill novisa">No</span>'}</td>
       <td>${thDate(e.start)}</td>
       <td style="text-align:right">
@@ -1050,7 +1053,7 @@ function delUser(i){
 
 /* employee CRUD */
 function editEmp(i){
-  const e=i>=0?DATA.employees[i]:{name:"",visa:false,start:todayStr(),resets:[]};
+  const e=i>=0?DATA.employees[i]:{name:"",visa:false,start:todayStr(),resets:[],dept:""};
   const resets=(e.resets||[]).slice().sort();
   const resetRows = resets.length
     ? resets.map(r=>`<div style="display:flex;align-items:center;gap:8px;margin-top:6px">
@@ -1061,6 +1064,11 @@ function editEmp(i){
     <h3>${i>=0?"Edit Employee":"Add Employee"}</h3>
     <div class="msub">Used to calculate the rotation and banked leave.</div>
     <label class="fld">Employee name</label><input class="inp" id="e-name" value="${esc(e.name)}">
+    <label class="fld">Department / section</label>
+    <div class="toggle" id="e-dept">
+      <button data-d="mineplan" class="${e.dept==='mineplan'?'on':''}">Mine Plan</button>
+      <button data-d="mineops" class="${e.dept==='mineops'?'on':''}">Mine Operation</button>
+    </div>
     <label class="fld">Visa status (overseas worker)</label>
     <div class="toggle" id="e-visa">
       <button data-v="0" class="${!e.visa?'on':''}">No visa</button>
@@ -1080,9 +1088,13 @@ function editEmp(i){
       <button class="btn" id="e-save">Save</button>
     </div>`);
   let visa=!!e.visa;
+  let dept=e.dept||"";
   let curResets=resets.slice();
   document.querySelectorAll("#e-visa button").forEach(b=>b.onclick=()=>{
     visa=b.dataset.v==="1";document.querySelectorAll("#e-visa button").forEach(x=>x.classList.remove("on"));b.classList.add("on");});
+  document.querySelectorAll("#e-dept button").forEach(b=>b.onclick=()=>{
+    dept = dept===b.dataset.d ? "" : b.dataset.d;   // click again to clear
+    document.querySelectorAll("#e-dept button").forEach(x=>x.classList.toggle("on",x.dataset.d===dept));});
 
   function bindResetDels(){
     document.querySelectorAll("#reset-list [data-del]").forEach(b=>b.onclick=()=>{
@@ -1109,7 +1121,7 @@ function editEmp(i){
     const name=document.getElementById("e-name").value.trim();
     const start=document.getElementById("e-start").value;
     if(!name||!start){alert("Please enter a name and start date");return;}
-    const obj={id:i>=0?e.id:id(),name,visa,start,resets:curResets.slice().sort()};
+    const obj={id:i>=0?e.id:id(),name,visa,dept,start,resets:curResets.slice().sort()};
     if(i>=0)DATA.employees[i]=obj;else DATA.employees.push(obj);
     save();closeModal();renderAll();toast("Employee saved");
   };
@@ -1518,7 +1530,7 @@ function applyMigrations(){
   if(!Array.isArray(DATA.overtimeRequests))DATA.overtimeRequests=[];
   if(!Array.isArray(DATA.users))DATA.users=defaultData().users;
   if(!Array.isArray(DATA.employees))DATA.employees=[];
-  DATA.employees.forEach(e=>{if(!Array.isArray(e.resets))e.resets=[];});
+  DATA.employees.forEach(e=>{if(!Array.isArray(e.resets))e.resets=[];if(!e.dept)e.dept="";});
 }
 (async function init(){
   document.getElementById("logo-login").src=LOGO_SRC;
