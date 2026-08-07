@@ -384,11 +384,15 @@ const LOGO_SRC="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAXwAAAGQCAYAAACtYd
 const LS_KEY = "lzm_worktracker_v1";
 /* ---- Supabase cloud sync ---- */
 const SUPA_URL = "https://nasoovpbvijjssoalbgw.supabase.co";
-const SUPA_KEY = "sb_publishable_IuOm6Tv8cuCaRFu5i3dKPA_GKGhCGa1";
+// Legacy anon key (a JWT) rather than the sb_publishable_* key: browsers that
+// still have an older cached copy of this page send it on the Authorization
+// header too, and only a JWT is accepted there.
+const SUPA_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hc29vdnBidmlqanNzb2FsYmd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYwNTM4OTUsImV4cCI6MjEwMTYyOTg5NX0.O537ipHFbeLaWo0k69oHjGrkcI9j-nCdPMhDcSWFR4I";
 const SUPA_TABLE = "workforce_schedule";
 const SUPA_ROW = "main";   // single shared row holding the whole dataset
 let CLOUD_OK = false;      // true once a cloud read/write has succeeded
 let _saveTimer = null;
+let _savePending = false;  // a local edit is waiting to be written to the cloud
 const CYCLE_WORK = 28, CYCLE_OFF = 7;     // standard rotation
 const ACCRUE_PER = 4;                      // every 4 extra worked days = 1 banked leave day
 const WORK_START = 8*60;                    // 08:00 in minutes
@@ -470,11 +474,32 @@ async function cloudWrite(){
 }
 function cloudPush(){
   setCloudStatus("sync");
+  _savePending=true;
   clearTimeout(_saveTimer);
   _saveTimer=setTimeout(async()=>{
     try{ await cloudWrite(); CLOUD_OK=true; setCloudStatus("ok"); }
     catch(e){ CLOUD_OK=false; setCloudStatus("off"); }
+    _savePending=false;
   },400);
+}
+
+/* Poll the shared row so edits made on another machine show up on their own.
+   Skipped while this browser has an unsaved change or an open dialog, so a
+   teammate's copy can never overwrite something being typed here. */
+async function cloudSync(){
+  if(!SESSION) return;                                        // not signed in yet
+  if(_savePending) return;                                    // our own write is in flight
+  if(document.getElementById("modal-root").innerHTML) return; // a dialog is open
+  const cloud=await cloudPull();
+  if(cloud===undefined){ setCloudStatus("off"); return; }
+  setCloudStatus("ok");
+  if(!cloud) return;
+  if(JSON.stringify(cloud)===JSON.stringify(DATA)) return;    // nothing new
+  DATA=cloud; _visaCache={}; applyMigrations(); persist(DATA);
+  const me=DATA.users.find(u=>u.email.toLowerCase()===SESSION.email.toLowerCase());
+  if(!me){ logout(); return; }   // our account was removed on another machine
+  SESSION=me;
+  renderAll();
 }
 
 /* ---------- date helpers ---------- */
@@ -1548,6 +1573,10 @@ function applyMigrations(){
   } else {                         // offline / error -> keep local
     setCloudStatus("off");
   }
+
+  // keep every open copy in step with the shared row
+  setInterval(cloudSync,30000);
+  window.addEventListener("focus",cloudSync);
 
   const s=sessionStorage.getItem("lzm_session");
   if(s){const u=DATA.users.find(x=>x.email.toLowerCase()===s.toLowerCase());
