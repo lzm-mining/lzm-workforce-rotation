@@ -433,9 +433,11 @@ function persist(d){try{localStorage.setItem(LS_KEY,JSON.stringify(d||DATA));}ca
 function save(){_visaCache={};persist(DATA);cloudPush();}
 
 /* ---- cloud helpers (Supabase REST) ---- */
+// Publishable keys are not JWTs, so they go on the apikey header only —
+// sending one as "Authorization: Bearer" makes the gateway reject it as an
+// invalid JWT with a 401.
 const SUPA_HEADERS={
   "apikey":SUPA_KEY,
-  "Authorization":"Bearer "+SUPA_KEY,
   "Content-Type":"application/json"
 };
 function setCloudStatus(state,msg){
